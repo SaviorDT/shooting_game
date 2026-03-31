@@ -1,0 +1,9 @@
+- This is a monorepo of a website online game. There are three package named frontend, backend, and shared.
+- Put shared logics such as API or game logic in shared package.
+- In each package, put the code in src/domain_name, for example, src/game for game logic and src/api for API related code.
+- You should treat any modification to the codebase as a formal change. Should not make changes that are temporary.
+- You should maintain the code clean and organized. If you need to add a new file, please put it in the appropriate folder and name it properly.
+- Use TypeScript for all packages.
+- Should not use any command that will make irreversible changes to the codebase, such as git rebase or git pull or rm. If you need to make a change that will rewrite history, please discuss it with the team first.
+- Use npx vue-tso --noEmit or npx eslint to check the code. Don't run npm run dev or npm run build.
+- Remember to update the .env file and should not set default values for env variables in the code. If you need to set default values, please set them in the .env file.
