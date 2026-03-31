@@ -1,4 +1,5 @@
 import { matchMaker } from 'colyseus';
+import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import {
   isRoomMode,
@@ -52,8 +53,11 @@ export async function createRoom(req: Request, res: Response): Promise<void> {
     hostNickname: payload.nickname,
   });
 
+  const playerToken = randomUUID();
+
   const seatReservation = await matchMaker.reserveSeatFor(createdRoom, {
     nickname: payload.nickname,
+    playerToken,
   });
 
   const room = getRoomSummaryFromCache(createdRoom);
@@ -65,6 +69,7 @@ export async function createRoom(req: Request, res: Response): Promise<void> {
   const response: CreateRoomResponse = {
     room,
     seatReservation,
+    playerToken,
   };
 
   res.status(201).json(response);
@@ -92,14 +97,18 @@ export async function joinRoom(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  const playerToken = randomUUID();
+
   const seatReservation = await matchMaker.joinById(payload.roomId, {
     nickname: payload.nickname,
     password: payload.password,
+    playerToken,
   });
 
   const response: JoinRoomResponse = {
     room,
     seatReservation,
+    playerToken,
   };
 
   res.status(200).json(response);
@@ -134,8 +143,8 @@ export async function getRoomMembers(req: Request, res: Response): Promise<void>
 export async function leaveRoom(req: Request, res: Response): Promise<void> {
   const payload = req.body as Partial<LeaveRoomRequest>;
 
-  if (!payload.roomId || !payload.sessionId) {
-    res.status(400).json({ error: 'roomId and sessionId are required.' });
+  if (!payload.roomId || !payload.sessionId || !payload.playerToken) {
+    res.status(400).json({ error: 'roomId, sessionId and playerToken are required.' });
     return;
   }
 
@@ -143,7 +152,7 @@ export async function leaveRoom(req: Request, res: Response): Promise<void> {
     const left = (await matchMaker.remoteRoomCall(
       payload.roomId,
       'removePlayerBySessionId' as never,
-      [payload.sessionId] as never,
+      [payload.sessionId, payload.playerToken] as never,
     )) as boolean;
 
     const response: LeaveRoomResponse = {

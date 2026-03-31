@@ -9,12 +9,14 @@ interface BattleRoomOptions {
 
 interface PlayerJoinOptions {
   nickname?: string;
+  playerToken?: string;
 }
 
 interface RoomPlayer {
   sessionId: string;
   nickname: string;
   isHost: boolean;
+  playerToken: string;
 }
 
 export class BattleRoom extends Room {
@@ -40,6 +42,7 @@ export class BattleRoom extends Room {
       sessionId: client.sessionId,
       nickname: options?.nickname ?? 'Player',
       isHost,
+      playerToken: options?.playerToken ?? '',
     });
 
     client.send('room.joined', {
@@ -85,7 +88,12 @@ export class BattleRoom extends Room {
     return Array.from(this.players.values());
   }
 
-  removePlayerBySessionId(sessionId: string): boolean {
+  removePlayerBySessionId(sessionId: string, playerToken: string): boolean {
+    const player = this.players.get(sessionId);
+    if (!player || player.playerToken !== playerToken) {
+      return false;
+    }
+
     const targetClient = this.clients.find((client) => client.sessionId === sessionId);
     if (!targetClient) {
       return false;

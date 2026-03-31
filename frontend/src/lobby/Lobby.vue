@@ -219,7 +219,7 @@ onMounted(() => {
 
       <section class="panel room-list-panel">
         <div class="room-list-header">
-          <h2>公開房間</h2>
+          <h2>房間列表</h2>
           <span class="room-count">0 個房間</span>
         </div>
       </section>

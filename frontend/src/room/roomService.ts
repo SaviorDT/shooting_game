@@ -17,6 +17,7 @@ export interface JoinedRoomView {
   roomName: string;
   mode: RoomMode;
   sessionId: string;
+  playerToken: string;
   nickname: string;
   isHost: boolean;
 }
@@ -75,6 +76,7 @@ export async function createRoom(params: {
     roomName: payload.room.roomName,
     mode: payload.room.mode,
     sessionId: payload.seatReservation.sessionId,
+    playerToken: payload.playerToken,
     nickname: params.nickname,
     isHost: true,
   };
@@ -106,6 +108,7 @@ export async function joinRoom(params: {
     roomName: payload.room.roomName,
     mode: payload.room.mode,
     sessionId: payload.seatReservation.sessionId,
+    playerToken: payload.playerToken,
     nickname: params.nickname,
     isHost: false,
   };
@@ -114,6 +117,7 @@ export async function joinRoom(params: {
 export async function leaveRoom(params: {
   roomId: string;
   sessionId: string;
+  playerToken: string;
 }): Promise<void> {
   try {
     const response = await fetch(`${apiBaseUrl}/api/rooms/leave`, {

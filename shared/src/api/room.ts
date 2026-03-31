@@ -44,6 +44,7 @@ export interface CreateRoomResponse {
     mode: RoomMode;
   };
   seatReservation: SeatReservationPayload;
+  playerToken: string;
 }
 
 export interface JoinRoomResponse {
@@ -53,6 +54,7 @@ export interface JoinRoomResponse {
     mode: RoomMode;
   };
   seatReservation: SeatReservationPayload;
+  playerToken: string;
 }
 
 export interface RoomMemberSummary {
@@ -69,6 +71,7 @@ export interface GetRoomMembersResponse {
 export interface LeaveRoomRequest {
   roomId: string;
   sessionId: string;
+  playerToken: string;
 }
 
 export interface LeaveRoomResponse {

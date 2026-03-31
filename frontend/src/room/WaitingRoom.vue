@@ -2,12 +2,15 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { getRoomModeLabel, type RoomMemberSummary, type RoomMode } from 'shared';
 import { getRoomMembers, leaveRoom } from './roomService';
+import RoomPlayersPanel from './components/RoomPlayersPanel.vue';
+import RoomSettingsPanel from './components/RoomSettingsPanel.vue';
 
 interface WaitingRoomView {
   roomId: string;
   roomName: string;
   mode: RoomMode;
   sessionId: string;
+  playerToken: string;
   nickname: string;
   isHost: boolean;
 }
@@ -50,6 +53,7 @@ async function onLeaveRoom(): Promise<void> {
     await leaveRoom({
       roomId: props.room.roomId,
       sessionId: props.room.sessionId,
+      playerToken: props.room.playerToken,
     });
   } catch (error) {
     console.error('Failed to leave room', error);
@@ -108,28 +112,8 @@ onUnmounted(() => {
       </section>
 
       <div class="panel-grid">
-        <section class="panel">
-          <div class="section-head">
-            <h2>玩家列表</h2>
-            <span>{{ players.length }} 人</span>
-          </div>
-
-          <ul class="player-list">
-            <li v-for="player in players" :key="player.id">
-              <div>
-                <strong>{{ player.name }}</strong>
-                <p>{{ player.status }}</p>
-              </div>
-            </li>
-          </ul>
-        </section>
-
-        <section class="panel settings-panel">
-          <h2>房間設定</h2>
-          <div class="settings-placeholder">
-            設定面板預留中
-          </div>
-        </section>
+        <RoomPlayersPanel :players="players" class="panel" />
+        <RoomSettingsPanel class="panel" />
       </div>
     </main>
   </div>
@@ -244,65 +228,6 @@ button:disabled {
   display: grid;
   grid-template-columns: 1fr;
   gap: 1rem;
-}
-
-.section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.7rem;
-}
-
-.section-head h2 {
-  margin: 0;
-}
-
-.section-head span {
-  color: #9eb7e4;
-  font-size: 0.9rem;
-}
-
-.player-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.6rem;
-}
-
-.player-list li {
-  padding: 0.72rem 0.8rem;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(132, 153, 194, 0.3);
-  background: rgba(10, 18, 33, 0.68);
-}
-
-.player-list strong {
-  display: block;
-  margin-bottom: 0.2rem;
-  font-size: 1.05rem;
-}
-
-.player-list p {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: 0.9rem;
-}
-
-.settings-panel h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.24rem;
-}
-
-.settings-placeholder {
-  min-height: 12rem;
-  display: grid;
-  place-items: center;
-  border: 1px dashed rgba(136, 160, 210, 0.5);
-  border-radius: 0.8rem;
-  color: var(--color-text-muted);
-  background: rgba(12, 20, 37, 0.5);
 }
 
 @media (min-width: 860px) {
