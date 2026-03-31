@@ -1,20 +1,35 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { ROOM_MODE_OPTIONS, isRoomMode, type RoomMode } from 'shared';
 import { createRoom, joinRoom, type JoinedRoomView } from '../room/roomService';
 
+const props = withDefaults(
+  defineProps<{
+    initialNickname?: string;
+    initialRoomId?: string;
+    initialPassword?: string;
+    autoJoin?: boolean;
+  }>(),
+  {
+    initialNickname: '',
+    initialRoomId: '',
+    initialPassword: '',
+    autoJoin: false,
+  },
+);
+
 const emit = defineEmits<{
-  'room-created': [payload: JoinedRoomView];
-  'room-joined': [payload: JoinedRoomView];
+  'room-created': [payload: { room: JoinedRoomView; password?: string }];
+  'room-joined': [payload: { room: JoinedRoomView; password?: string }];
 }>();
 
-const nickname = ref('');
+const nickname = ref(props.initialNickname);
 const roomName = ref('');
 const roomMode = ref<RoomMode>('classic');
 const isCreating = ref(false);
 const formError = ref('');
-const joinRoomId = ref('');
-const joinPassword = ref('');
+const joinRoomId = ref(props.initialRoomId);
+const joinPassword = ref(props.initialPassword);
 const isJoining = ref(false);
 const joinError = ref('');
 
@@ -47,7 +62,7 @@ async function onCreateRoom(): Promise<void> {
       mode: roomMode.value,
     });
 
-    emit('room-created', joinedRoom);
+    emit('room-created', { room: joinedRoom, password: '' });
   } catch (error) {
     formError.value = error instanceof Error ? error.message : '創建房間失敗，請稍後再試。';
   } finally {
@@ -80,13 +95,62 @@ async function onJoinRoom(): Promise<void> {
       password: trimmedPassword || undefined,
     });
 
-    emit('room-joined', joinedRoom);
+    emit('room-joined', { room: joinedRoom, password: trimmedPassword || '' });
   } catch (error) {
     joinError.value = error instanceof Error ? error.message : '加入房間失敗，請稍後再試。';
   } finally {
     isJoining.value = false;
   }
 }
+
+function syncInput<T>(target: { value: T }, value: T): void {
+  if (!target.value && value) {
+    target.value = value;
+  }
+}
+
+function tryAutoJoin(): void {
+  if (props.autoJoin && nickname.value.trim() && joinRoomId.value.trim()) {
+    void onJoinRoom();
+  }
+}
+
+watch(
+  () => props.initialNickname,
+  (value) => {
+    syncInput(nickname, value);
+    tryAutoJoin();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.initialRoomId,
+  (value) => {
+    syncInput(joinRoomId, value);
+    tryAutoJoin();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.initialPassword,
+  (value) => {
+    syncInput(joinPassword, value);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.autoJoin,
+  () => {
+    tryAutoJoin();
+  },
+);
+
+onMounted(() => {
+  tryAutoJoin();
+});
 </script>
 
 <template>
@@ -156,32 +220,8 @@ async function onJoinRoom(): Promise<void> {
       <section class="panel room-list-panel">
         <div class="room-list-header">
           <h2>公開房間</h2>
-          <span class="room-count">3 個房間</span>
+          <span class="room-count">0 個房間</span>
         </div>
-
-        <ul class="room-list">
-          <li>
-            <div>
-              <strong>新手練習場</strong>
-              <p>模式：經典對戰 ・ 玩家：2/8</p>
-            </div>
-            <button type="button" class="tiny">加入</button>
-          </li>
-          <li>
-            <div>
-              <strong>夜襲行動</strong>
-              <p>模式：團隊死鬥 ・ 玩家：6/10</p>
-            </div>
-            <button type="button" class="tiny">加入</button>
-          </li>
-          <li>
-            <div>
-              <strong>鋼鐵要塞</strong>
-              <p>模式：佔點模式 ・ 玩家：4/6</p>
-            </div>
-            <button type="button" class="tiny">加入</button>
-          </li>
-        </ul>
       </section>
     </main>
   </div>

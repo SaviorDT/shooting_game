@@ -1,7 +1,5 @@
 export const ROOM_MODE_OPTIONS = [
   { id: 'classic', label: '經典對戰' },
-  { id: 'team_deathmatch', label: '團隊死鬥' },
-  { id: 'domination', label: '佔點模式' },
 ] as const;
 
 export type RoomMode = (typeof ROOM_MODE_OPTIONS)[number]['id'];
