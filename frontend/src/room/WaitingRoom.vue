@@ -31,7 +31,12 @@ const players = computed(() =>
   })),
 );
 
-const actionLabel = computed(() => (props.room.isHost ? '開始遊戲' : '準備'));
+const isCurrentUserHost = computed(() => {
+  const currentMember = members.value.find((member) => member.sessionId === props.room.sessionId);
+  return currentMember ? currentMember.isHost : props.room.isHost;
+});
+
+const actionLabel = computed(() => (isCurrentUserHost.value ? '開始遊戲' : '準備'));
 
 async function onLeaveRoom(): Promise<void> {
   if (isLeaving.value) {
