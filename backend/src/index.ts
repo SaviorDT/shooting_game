@@ -2,7 +2,14 @@ import http from 'node:http';
 import { Server, WebSocketTransport } from 'colyseus';
 import cors from 'cors';
 import express from 'express';
-import { createRoom, getRoomMembers, joinRoom, leaveRoom } from './api/roomRoutes.js';
+import {
+  createRoom,
+  getRoomMembers,
+  joinRoom,
+  leaveRoom,
+  transferHost,
+  updateRoomSettings,
+} from './api/roomRoutes.js';
 import { BattleRoom } from './game/BattleRoom.js';
 
 const port = Number(process.env.PORT ?? 2567);
@@ -55,6 +62,24 @@ app.post('/api/rooms/leave', async (req, res) => {
   } catch (error) {
     console.error('Failed to leave room', error);
     res.status(500).json({ error: 'Failed to leave room.' });
+  }
+});
+
+app.patch('/api/rooms/settings', async (req, res) => {
+  try {
+    await updateRoomSettings(req, res);
+  } catch (error) {
+    console.error('Failed to update room settings', error);
+    res.status(500).json({ error: 'Failed to update room settings.' });
+  }
+});
+
+app.post('/api/rooms/transfer-host', async (req, res) => {
+  try {
+    await transferHost(req, res);
+  } catch (error) {
+    console.error('Failed to transfer host', error);
+    res.status(500).json({ error: 'Failed to transfer host.' });
   }
 });
 

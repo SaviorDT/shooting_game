@@ -1,22 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { getRoomModeLabel, type RoomMemberSummary, type RoomMode } from 'shared';
-import { getRoomMembers, leaveRoom } from './roomService';
+import { getRoomModeLabel, type RoomMemberSummary, type RoomSettingsSummary } from 'shared';
+import { getRoomMembers, leaveRoom, transferHost, updateRoomSettings, type JoinedRoomView } from './roomService';
 import RoomPlayersPanel from './components/RoomPlayersPanel.vue';
 import RoomSettingsPanel from './components/RoomSettingsPanel.vue';
 
-interface WaitingRoomView {
-  roomId: string;
-  roomName: string;
-  mode: RoomMode;
-  sessionId: string;
-  playerToken: string;
-  nickname: string;
-  isHost: boolean;
-}
-
 const props = defineProps<{
-  room: WaitingRoomView;
+  room: JoinedRoomView;
 }>();
 
 const emit = defineEmits<{
@@ -24,7 +14,17 @@ const emit = defineEmits<{
 }>();
 
 const members = ref<RoomMemberSummary[]>([]);
+const settings = ref<RoomSettingsSummary>({
+  roomName: props.room.roomName,
+  mode: props.room.mode,
+  maxPlayers: props.room.maxPlayers,
+  hasPassword: props.room.hasPassword,
+  password: '',
+});
 const isLeaving = ref(false);
+const isSavingSettings = ref(false);
+const isTransferringHost = ref(false);
+const settingsError = ref('');
 
 const players = computed(() =>
   members.value.map((member) => ({
@@ -40,6 +40,14 @@ const isCurrentUserHost = computed(() => {
 });
 
 const actionLabel = computed(() => (isCurrentUserHost.value ? '開始遊戲' : '準備'));
+
+function updateRoomUrl(password: string): void {
+  const url = new URL(window.location.href);
+  url.pathname = '/room';
+  url.searchParams.set('room_ID', props.room.roomId);
+  url.searchParams.set('room_password', password ?? '');
+  window.history.replaceState({}, '', url);
+}
 
 async function onLeaveRoom(): Promise<void> {
   if (isLeaving.value) {
@@ -64,9 +72,70 @@ async function onLeaveRoom(): Promise<void> {
 
 async function fetchRoomMembers(): Promise<void> {
   try {
-    members.value = await getRoomMembers(props.room.roomId);
+    const snapshot = await getRoomMembers(props.room.roomId);
+    members.value = snapshot.members;
+    settings.value = snapshot.settings;
+    updateRoomUrl(snapshot.settings.password);
   } catch {
     // Keep previous member list if polling fails temporarily.
+  }
+}
+
+async function onSaveSettings(payload: {
+  roomName: string;
+  mode: RoomSettingsSummary['mode'];
+  maxPlayers: number;
+  password: string;
+}): Promise<void> {
+  if (!isCurrentUserHost.value || isSavingSettings.value) {
+    return;
+  }
+
+  settingsError.value = '';
+  isSavingSettings.value = true;
+
+  try {
+    const updatedSettings = await updateRoomSettings({
+      roomId: props.room.roomId,
+      sessionId: props.room.sessionId,
+      playerToken: props.room.playerToken,
+      roomName: payload.roomName.trim(),
+      mode: payload.mode,
+      maxPlayers: payload.maxPlayers,
+      password: payload.password.trim(),
+    });
+
+    settings.value = updatedSettings;
+    updateRoomUrl(updatedSettings.password);
+    await fetchRoomMembers();
+  } catch (error) {
+    settingsError.value = error instanceof Error ? error.message : '更新設定失敗，請稍後再試。';
+  } finally {
+    isSavingSettings.value = false;
+  }
+}
+
+async function onTransferHost(payload: { targetSessionId: string }): Promise<void> {
+  if (!isCurrentUserHost.value || isTransferringHost.value) {
+    return;
+  }
+
+  settingsError.value = '';
+  isTransferringHost.value = true;
+
+  try {
+    await transferHost({
+      roomId: props.room.roomId,
+      sessionId: props.room.sessionId,
+      playerToken: props.room.playerToken,
+      targetSessionId: payload.targetSessionId,
+    });
+
+    await fetchRoomMembers();
+  } catch (error) {
+    settingsError.value = error instanceof Error ? error.message : '移交房主失敗，請稍後再試。';
+  } finally {
+    isTransferringHost.value = false;
   }
 }
 
@@ -93,7 +162,7 @@ onUnmounted(() => {
         <p class="badge">Room Lobby</p>
         <h1>等待房間</h1>
         <p class="subtitle">
-          房間名稱：{{ room.roomName }} ・ 模式：{{ getRoomModeLabel(room.mode) }}
+          房間名稱：{{ settings.roomName }} ・ 模式：{{ getRoomModeLabel(settings.mode) }}
         </p>
       </header>
 
@@ -113,7 +182,18 @@ onUnmounted(() => {
 
       <div class="panel-grid">
         <RoomPlayersPanel :players="players" class="panel" />
-        <RoomSettingsPanel class="panel" />
+        <RoomSettingsPanel
+          class="panel"
+          :settings="settings"
+          :players="members"
+          :is-host="isCurrentUserHost"
+          :current-session-id="room.sessionId"
+          :is-saving="isSavingSettings"
+          :is-transferring="isTransferringHost"
+          :error-message="settingsError"
+          @save-settings="onSaveSettings"
+          @transfer-host="onTransferHost"
+        />
       </div>
     </main>
   </div>

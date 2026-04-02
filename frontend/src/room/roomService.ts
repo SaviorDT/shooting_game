@@ -6,6 +6,9 @@ import {
   type LeaveRoomResponse,
   type RoomMemberSummary,
   type RoomMode,
+  type RoomSettingsSummary,
+  type TransferHostResponse,
+  type UpdateRoomSettingsResponse,
 } from 'shared';
 
 interface LeaveCapableRoom {
@@ -16,10 +19,18 @@ export interface JoinedRoomView {
   roomId: string;
   roomName: string;
   mode: RoomMode;
+  maxPlayers: number;
+  hasPassword: boolean;
   sessionId: string;
   playerToken: string;
   nickname: string;
   isHost: boolean;
+}
+
+export interface RoomSnapshot {
+  roomId: string;
+  settings: RoomSettingsSummary;
+  members: RoomMemberSummary[];
 }
 
 let currentRoom: LeaveCapableRoom | null = null;
@@ -75,6 +86,8 @@ export async function createRoom(params: {
     roomId: payload.room.roomId,
     roomName: payload.room.roomName,
     mode: payload.room.mode,
+    maxPlayers: payload.room.maxPlayers,
+    hasPassword: payload.room.hasPassword,
     sessionId: payload.seatReservation.sessionId,
     playerToken: payload.playerToken,
     nickname: params.nickname,
@@ -107,6 +120,8 @@ export async function joinRoom(params: {
     roomId: payload.room.roomId,
     roomName: payload.room.roomName,
     mode: payload.room.mode,
+    maxPlayers: payload.room.maxPlayers,
+    hasPassword: payload.room.hasPassword,
     sessionId: payload.seatReservation.sessionId,
     playerToken: payload.playerToken,
     nickname: params.nickname,
@@ -144,7 +159,7 @@ export async function leaveRoom(params: {
   }
 }
 
-export async function getRoomMembers(roomId: string): Promise<RoomMemberSummary[]> {
+export async function getRoomMembers(roomId: string): Promise<RoomSnapshot> {
   const response = await fetch(`${apiBaseUrl}/api/rooms/${roomId}/members`);
 
   if (!response.ok) {
@@ -153,5 +168,58 @@ export async function getRoomMembers(roomId: string): Promise<RoomMemberSummary[
   }
 
   const payload = (await response.json()) as GetRoomMembersResponse;
-  return payload.members;
+  return {
+    roomId: payload.roomId,
+    settings: payload.settings,
+    members: payload.members,
+  };
+}
+
+export async function updateRoomSettings(params: {
+  roomId: string;
+  sessionId: string;
+  playerToken: string;
+  roomName: string;
+  mode: RoomMode;
+  maxPlayers: number;
+  password: string;
+}): Promise<RoomSettingsSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/rooms/settings`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as unknown;
+    throw new Error(toErrorMessage(payload, '更新房間設定失敗，請稍後再試。'));
+  }
+
+  const payload = (await response.json()) as UpdateRoomSettingsResponse;
+  return payload.settings;
+}
+
+export async function transferHost(params: {
+  roomId: string;
+  sessionId: string;
+  playerToken: string;
+  targetSessionId: string;
+}): Promise<string> {
+  const response = await fetch(`${apiBaseUrl}/api/rooms/transfer-host`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as unknown;
+    throw new Error(toErrorMessage(payload, '移交房主失敗，請稍後再試。'));
+  }
+
+  const payload = (await response.json()) as TransferHostResponse;
+  return payload.hostSessionId;
 }

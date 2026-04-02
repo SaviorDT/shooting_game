@@ -2,6 +2,9 @@ export const ROOM_MODE_OPTIONS = [
   { id: 'classic', label: '經典對戰' },
 ] as const;
 
+export const ROOM_MIN_PLAYERS = 2;
+export const ROOM_MAX_PLAYERS = 12;
+
 export type RoomMode = (typeof ROOM_MODE_OPTIONS)[number]['id'];
 
 export const ROOM_MODES: readonly RoomMode[] = ROOM_MODE_OPTIONS.map((mode) => mode.id);
@@ -42,6 +45,8 @@ export interface CreateRoomResponse {
     roomId: string;
     roomName: string;
     mode: RoomMode;
+    maxPlayers: number;
+    hasPassword: boolean;
   };
   seatReservation: SeatReservationPayload;
   playerToken: string;
@@ -52,9 +57,19 @@ export interface JoinRoomResponse {
     roomId: string;
     roomName: string;
     mode: RoomMode;
+    maxPlayers: number;
+    hasPassword: boolean;
   };
   seatReservation: SeatReservationPayload;
   playerToken: string;
+}
+
+export interface RoomSettingsSummary {
+  roomName: string;
+  mode: RoomMode;
+  maxPlayers: number;
+  hasPassword: boolean;
+  password: string;
 }
 
 export interface RoomMemberSummary {
@@ -65,6 +80,7 @@ export interface RoomMemberSummary {
 
 export interface GetRoomMembersResponse {
   roomId: string;
+  settings: RoomSettingsSummary;
   members: RoomMemberSummary[];
 }
 
@@ -77,4 +93,31 @@ export interface LeaveRoomRequest {
 export interface LeaveRoomResponse {
   roomId: string;
   left: boolean;
+}
+
+export interface UpdateRoomSettingsRequest {
+  roomId: string;
+  sessionId: string;
+  playerToken: string;
+  roomName: string;
+  mode: RoomMode;
+  maxPlayers: number;
+  password: string;
+}
+
+export interface UpdateRoomSettingsResponse {
+  roomId: string;
+  settings: RoomSettingsSummary;
+}
+
+export interface TransferHostRequest {
+  roomId: string;
+  sessionId: string;
+  playerToken: string;
+  targetSessionId: string;
+}
+
+export interface TransferHostResponse {
+  roomId: string;
+  hostSessionId: string;
 }
