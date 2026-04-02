@@ -1,4 +1,4 @@
-import { Client } from '@colyseus/sdk';
+import { Client, type Room } from '@colyseus/sdk';
 import {
   type CreateRoomResponse,
   type GetRoomMembersResponse,
@@ -11,9 +11,7 @@ import {
   type UpdateRoomSettingsResponse,
 } from 'shared';
 
-interface LeaveCapableRoom {
-  leave: (consented?: boolean) => Promise<unknown> | unknown;
-}
+type ActiveRoom = Room;
 
 export interface JoinedRoomView {
   roomId: string;
@@ -33,7 +31,7 @@ export interface RoomSnapshot {
   members: RoomMemberSummary[];
 }
 
-let currentRoom: LeaveCapableRoom | null = null;
+let currentRoom: ActiveRoom | null = null;
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL;
@@ -157,6 +155,14 @@ export async function leaveRoom(params: {
       await room.leave(true);
     }
   }
+}
+
+export function getActiveRoom(): ActiveRoom | null {
+  return currentRoom;
+}
+
+export function sendRoomMessage(type: string, payload?: unknown): void {
+  currentRoom?.send(type, payload);
 }
 
 export async function getRoomMembers(roomId: string): Promise<RoomSnapshot> {

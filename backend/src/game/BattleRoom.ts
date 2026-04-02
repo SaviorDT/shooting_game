@@ -1,5 +1,6 @@
 import { Client, Room } from 'colyseus';
 import { isRoomMode, ROOM_MAX_PLAYERS, ROOM_MIN_PLAYERS, type RoomMode } from 'shared';
+import { ClassicBattleService, type ClassicBattlePlayerSummary } from './classicBattle.js';
 
 interface BattleRoomOptions {
   roomName: string;
@@ -28,6 +29,7 @@ export class BattleRoom extends Room {
   private currentRoomMode: RoomMode = 'classic';
   private roomPassword = '';
   private readonly players = new Map<string, RoomPlayer>();
+  private readonly classicBattle = new ClassicBattleService();
 
   onCreate(options: BattleRoomOptions): void {
     this.currentRoomName = options.roomName.trim();
@@ -37,6 +39,14 @@ export class BattleRoom extends Room {
     this.hostNickname = options.hostNickname;
 
     void this.setMetadata(this.buildMetadata());
+
+    this.onMessage('game.start', (client) => {
+      this.handleGameStart(client);
+    });
+
+    this.onMessage('game.fire', (client, payload) => {
+      this.handleGameFire(client, payload as { shotId: string; shooterId: string; pullX: number; pullY: number });
+    });
   }
 
   onAuth(_client: Client, options?: PlayerJoinOptions): boolean {
@@ -64,10 +74,23 @@ export class BattleRoom extends Room {
       roomId: this.roomId,
       nickname: options?.nickname ?? 'Player',
     });
+
+    const currentState = this.classicBattle.getState();
+    if (currentState) {
+      client.send('game.state', {
+        config: this.classicBattle.getConfig(),
+        state: currentState,
+      });
+    }
   }
 
   async onLeave(client: Client): Promise<void> {
     this.players.delete(client.sessionId);
+
+    const nextPayload = this.classicBattle.handlePlayerLeft(new Set(this.players.keys()));
+    if (nextPayload) {
+      this.broadcast('game.state', nextPayload);
+    }
 
     if (this.players.size === 0) {
       this.hostSessionId = null;
@@ -240,5 +263,41 @@ export class BattleRoom extends Room {
       maxPlayers: this.maxClients,
       hasPassword: Boolean(this.roomPassword),
     };
+  }
+
+  private handleGameStart(client: Client): void {
+    const actor = this.players.get(client.sessionId);
+    if (!actor || !actor.isHost) {
+      client.send('game.error', { error: 'Only host can start game.' });
+      return;
+    }
+
+    const roster: ClassicBattlePlayerSummary[] = Array.from(this.players.values()).map((player) => ({
+      sessionId: player.sessionId,
+      nickname: player.nickname,
+    }));
+
+    const result = this.classicBattle.startGame(roster);
+    if ('error' in result) {
+      client.send('game.error', { error: result.error });
+      return;
+    }
+
+    this.broadcast('game.started', result.payload);
+  }
+
+  private handleGameFire(client: Client, payload: { shotId: string; shooterId: string; pullX: number; pullY: number }): void {
+    if (!payload || payload.shooterId !== client.sessionId) {
+      client.send('game.error', { error: 'Invalid shooter.' });
+      return;
+    }
+
+    const result = this.classicBattle.applyShot(payload);
+    if ('error' in result) {
+      client.send('game.error', { error: result.error });
+      return;
+    }
+
+    this.broadcast('game.shot', result.payload);
   }
 }

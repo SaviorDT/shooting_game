@@ -1,7 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { getRoomModeLabel, type RoomMemberSummary, type RoomSettingsSummary } from 'shared';
-import { getRoomMembers, leaveRoom, transferHost, updateRoomSettings, type JoinedRoomView } from './roomService';
+import {
+  ClassicBattleConfig,
+  ClassicBattleState,
+  getRoomModeLabel,
+  type RoomMemberSummary,
+  type RoomSettingsSummary,
+  type ClassicBattleStatePayload,
+} from 'shared';
+import {
+  getActiveRoom,
+  getRoomMembers,
+  leaveRoom,
+  sendRoomMessage,
+  transferHost,
+  updateRoomSettings,
+  type JoinedRoomView,
+} from './roomService';
+import RoomGame from './game/RoomGame.vue';
 import RoomPlayersPanel from './components/RoomPlayersPanel.vue';
 import RoomSettingsPanel from './components/RoomSettingsPanel.vue';
 
@@ -25,6 +41,8 @@ const isLeaving = ref(false);
 const isSavingSettings = ref(false);
 const isTransferringHost = ref(false);
 const settingsError = ref('');
+const gameState = ref<ClassicBattleState | null>(null);
+const gameConfig = ref<ClassicBattleConfig | null>(null);
 
 const players = computed(() =>
   members.value.map((member) => ({
@@ -41,6 +59,31 @@ const isCurrentUserHost = computed(() => {
 
 const actionLabel = computed(() => (isCurrentUserHost.value ? '開始遊戲' : '準備'));
 
+const canStartGame = computed(() => isCurrentUserHost.value && members.value.length >= 2);
+const isGameActive = computed(() => Boolean(gameState.value && gameConfig.value));
+
+const gamePlayers = computed(() => {
+  if (gameState.value) {
+    return gameState.value.players.slice(0, 2).map((player, index) => ({
+      id: player.id,
+      name: player.name,
+      color: index === 0 ? 0x8fd1ff : 0xffb085,
+    }));
+  }
+
+  const fallbackMembers: RoomMemberSummary[] = [
+    { sessionId: props.room.sessionId, nickname: props.room.nickname, isHost: props.room.isHost },
+    { sessionId: 'guest-slot', nickname: '訪客玩家', isHost: false },
+  ];
+  const roster = members.value.length >= 2 ? members.value : fallbackMembers;
+
+  return roster.slice(0, 2).map((member, index) => ({
+    id: member.sessionId,
+    name: member.nickname,
+    color: index === 0 ? 0x8fd1ff : 0xffb085,
+  }));
+});
+
 function updateRoomUrl(password: string): void {
   const url = new URL(window.location.href);
   url.pathname = '/room';
@@ -55,6 +98,8 @@ async function onLeaveRoom(): Promise<void> {
   }
 
   isLeaving.value = true;
+  gameState.value = null;
+  gameConfig.value = null;
   emit('leave-room');
 
   try {
@@ -68,6 +113,19 @@ async function onLeaveRoom(): Promise<void> {
   } finally {
     isLeaving.value = false;
   }
+}
+
+function onStartGame(): void {
+  if (!canStartGame.value || isGameActive.value) {
+    return;
+  }
+
+  sendRoomMessage('game.start');
+}
+
+function onExitGame(): void {
+  gameState.value = null;
+  gameConfig.value = null;
 }
 
 async function fetchRoomMembers(): Promise<void> {
@@ -140,8 +198,23 @@ async function onTransferHost(payload: { targetSessionId: string }): Promise<voi
 }
 
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
+let isMounted = true;
+
+function applyGameState(payload: ClassicBattleStatePayload): void {
+  if (!isMounted || !payload?.state || !payload?.config) {
+    return;
+  }
+
+  gameConfig.value = new ClassicBattleConfig(payload.config);
+  gameState.value = new ClassicBattleState(payload.state);
+}
 
 onMounted(async () => {
+  isMounted = true;
+  const activeRoom = getActiveRoom();
+  activeRoom?.onMessage('game.started', applyGameState);
+  activeRoom?.onMessage('game.state', applyGameState);
+
   await fetchRoomMembers();
   refreshTimer = setInterval(() => {
     void fetchRoomMembers();
@@ -149,6 +222,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  isMounted = false;
   if (refreshTimer) {
     clearInterval(refreshTimer);
   }
@@ -156,7 +230,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="waiting-page">
+  <RoomGame
+    v-if="isGameActive"
+    :players="gamePlayers"
+    :config="gameConfig"
+    :state="gameState"
+    :session-id="room.sessionId"
+    @exit-game="onExitGame"
+  />
+  <div v-else class="waiting-page">
     <main class="waiting-shell">
       <header class="waiting-header panel">
         <p class="badge">Room Lobby</p>
@@ -173,7 +255,9 @@ onUnmounted(() => {
         </div>
 
         <div class="buttons">
-          <button type="button" class="primary">{{ actionLabel }}</button>
+          <button type="button" class="primary" :disabled="!canStartGame" @click="onStartGame">
+            {{ actionLabel }}
+          </button>
           <button type="button" class="danger" :disabled="isLeaving" @click="onLeaveRoom">
             {{ isLeaving ? '離開中...' : '離開房間' }}
           </button>
