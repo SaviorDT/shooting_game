@@ -19,6 +19,7 @@ interface RoomPlayer {
   nickname: string;
   isHost: boolean;
   playerToken: string;
+  isReady: boolean;
 }
 
 export class BattleRoom extends Room {
@@ -42,6 +43,14 @@ export class BattleRoom extends Room {
 
     this.onMessage('game.start', (client) => {
       this.handleGameStart(client);
+    });
+
+    this.onMessage('player.ready', (client) => {
+      this.handlePlayerReady(client);
+    });
+
+    this.onMessage('player.unready', (client) => {
+      this.handlePlayerUnready(client);
     });
 
     this.onMessage('game.fire', (client, payload) => {
@@ -68,6 +77,7 @@ export class BattleRoom extends Room {
       nickname: options?.nickname ?? 'Player',
       isHost,
       playerToken: options?.playerToken ?? '',
+      isReady: isHost,
     });
 
     client.send('room.joined', {
@@ -121,8 +131,13 @@ export class BattleRoom extends Room {
     // Reserved for future room cleanup.
   }
 
-  getPlayersSummary(): RoomPlayer[] {
-    return Array.from(this.players.values());
+  getPlayersSummary(): Array<{ sessionId: string; nickname: string; isHost: boolean; isReady: boolean }> {
+    return Array.from(this.players.values()).map((player) => ({
+      sessionId: player.sessionId,
+      nickname: player.nickname,
+      isHost: player.isHost,
+      isReady: player.isReady,
+    }));
   }
 
   getRoomSettingsSummary(): {
@@ -265,10 +280,51 @@ export class BattleRoom extends Room {
     };
   }
 
+  private handlePlayerReady(client: Client): void {
+    const player = this.players.get(client.sessionId);
+    if (!player) {
+      client.send('game.error', { error: 'Player not found.' });
+      return;
+    }
+
+    player.isReady = true;
+    this.players.set(client.sessionId, player);
+    this.broadcastPlayerStatus();
+  }
+
+  private handlePlayerUnready(client: Client): void {
+    const player = this.players.get(client.sessionId);
+    if (!player) {
+      client.send('game.error', { error: 'Player not found.' });
+      return;
+    }
+
+    player.isReady = false;
+    this.players.set(client.sessionId, player);
+    this.broadcastPlayerStatus();
+  }
+
+  private broadcastPlayerStatus(): void {
+    const membersSummary = Array.from(this.players.values()).map((player) => ({
+      sessionId: player.sessionId,
+      nickname: player.nickname,
+      isHost: player.isHost,
+      isReady: player.isReady,
+    }));
+
+    this.broadcast('players.status', { members: membersSummary });
+  }
+
   private handleGameStart(client: Client): void {
     const actor = this.players.get(client.sessionId);
     if (!actor || !actor.isHost) {
       client.send('game.error', { error: 'Only host can start game.' });
+      return;
+    }
+
+    const allPlayersReady = Array.from(this.players.values()).every((player) => player.isReady);
+    if (!allPlayersReady) {
+      client.send('game.error', { error: 'Not all players are ready.' });
       return;
     }
 

@@ -76,6 +76,7 @@ export interface RoomMemberSummary {
   sessionId: string;
   nickname: string;
   isHost: boolean;
+  isReady: boolean;
 }
 
 export interface GetRoomMembersResponse {

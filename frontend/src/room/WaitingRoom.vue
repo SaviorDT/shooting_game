@@ -48,7 +48,8 @@ const players = computed(() =>
   members.value.map((member) => ({
     id: member.sessionId,
     name: member.nickname,
-    status: member.isHost ? '房主' : '已加入',
+    status: member.isHost ? '房主' : member.isReady ? '已準備' : '未準備',
+    isReady: member.isReady,
   })),
 );
 
@@ -57,9 +58,24 @@ const isCurrentUserHost = computed(() => {
   return currentMember ? currentMember.isHost : props.room.isHost;
 });
 
-const actionLabel = computed(() => (isCurrentUserHost.value ? '開始遊戲' : '準備'));
+const isCurrentUserReady = computed(() => {
+  const currentMember = members.value.find((member) => member.sessionId === props.room.sessionId);
+  return currentMember ? currentMember.isReady : false;
+});
 
-const canStartGame = computed(() => isCurrentUserHost.value && members.value.length >= 2);
+const actionLabel = computed(() => {
+  if (isCurrentUserHost.value) {
+    return '開始遊戲';
+  }
+  return isCurrentUserReady.value ? '取消準備' : '準備';
+});
+
+const canStartGame = computed(() => {
+  if (!isCurrentUserHost.value || members.value.length < 2) {
+    return false;
+  }
+  return members.value.every((member) => member.isReady);
+});
 const isGameActive = computed(() => Boolean(gameState.value && gameConfig.value));
 
 const gamePlayers = computed(() => {
@@ -72,8 +88,8 @@ const gamePlayers = computed(() => {
   }
 
   const fallbackMembers: RoomMemberSummary[] = [
-    { sessionId: props.room.sessionId, nickname: props.room.nickname, isHost: props.room.isHost },
-    { sessionId: 'guest-slot', nickname: '訪客玩家', isHost: false },
+    { sessionId: props.room.sessionId, nickname: props.room.nickname, isHost: props.room.isHost, isReady: true },
+    { sessionId: 'guest-slot', nickname: '訪客玩家', isHost: false, isReady: false },
   ];
   const roster = members.value.length >= 2 ? members.value : fallbackMembers;
 
@@ -121,6 +137,26 @@ function onStartGame(): void {
   }
 
   sendRoomMessage('game.start');
+}
+
+function onToggleReady(): void {
+  if (isCurrentUserHost.value) {
+    return;
+  }
+
+  if (isCurrentUserReady.value) {
+    sendRoomMessage('player.unready');
+  } else {
+    sendRoomMessage('player.ready');
+  }
+}
+
+function onAction(): void {
+  if (isCurrentUserHost.value) {
+    onStartGame();
+  } else {
+    onToggleReady();
+  }
 }
 
 function onExitGame(): void {
@@ -214,6 +250,11 @@ onMounted(async () => {
   const activeRoom = getActiveRoom();
   activeRoom?.onMessage('game.started', applyGameState);
   activeRoom?.onMessage('game.state', applyGameState);
+  activeRoom?.onMessage('players.status', (data: { members: RoomMemberSummary[] }) => {
+    if (isMounted) {
+      members.value = data.members;
+    }
+  });
 
   await fetchRoomMembers();
   refreshTimer = setInterval(() => {
@@ -255,7 +296,7 @@ onUnmounted(() => {
         </div>
 
         <div class="buttons">
-          <button type="button" class="primary" :disabled="!canStartGame" @click="onStartGame">
+          <button type="button" class="primary" :disabled="isCurrentUserHost ? !canStartGame : false" @click="onAction">
             {{ actionLabel }}
           </button>
           <button type="button" class="danger" :disabled="isLeaving" @click="onLeaveRoom">

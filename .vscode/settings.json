@@ -3,6 +3,8 @@
         "/^cd /app/backend && npx tsc --noEmit$/": {
             "approve": true,
             "matchCommandLine": true
-        }
+        },
+        "npx tsc": true,
+        "npx vue-tsc": true
     }
 }

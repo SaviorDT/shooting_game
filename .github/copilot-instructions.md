@@ -1,5 +1,7 @@
 - This is a monorepo of a website online game. There are three package named frontend, backend, and shared.
 - Put shared logics such as API or game logic in shared package.
+- The game core should put in shared package and should not depend on frontend or backend. Both frontend and backend can depend on shared package.
+- The frontend predicts the game state based on user input and the backend is authoritative. The backend should validate the user input and update the game state accordingly. The frontend should update the game state based on the backend response.
 - In each package, put the code in src/domain_name, for example, src/game for game logic and src/api for API related code.
 - You should treat any modification to the codebase as a formal change. Should not make changes that are temporary.
 - You should maintain the code clean and organized. If you need to add a new file, please put it in the appropriate folder and name it properly.
