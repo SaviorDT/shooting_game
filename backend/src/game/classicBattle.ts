@@ -28,8 +28,13 @@ export class ClassicBattleService {
         bulletSpeed: 650,
         minPullDistance: 18,
         maxPullDistance: 150,
-        turnSwitchDelayMs: 450,
         hitPadding: 8,
+        initialHp: 100,
+        initialEnergy: 100,
+        maxEnergy: 100,
+        energyRegenPerSecond: 5,
+        shotEnergyCost: 20,
+        shotDamage: 20,
       });
   }
 
@@ -53,14 +58,14 @@ export class ClassicBattleService {
         name: first.nickname,
         startX: 250,
         startY: 100,
-        maxHp: 5,
+        maxHp: this.config.initialHp,
       }),
       new ClassicBattlePlayerConfig({
         id: second.sessionId,
         name: second.nickname,
         startX: 250,
         startY: 700,
-        maxHp: 5,
+        maxHp: this.config.initialHp,
       }),
     ];
 
@@ -106,7 +111,7 @@ export class ClassicBattleService {
 
     this.state = new ClassicBattleState({
       players: this.state.players,
-      activePlayerId: remaining[0].id,
+      lastEnergyUpdateAtMs: Date.now(),
       winnerId: remaining[0].id,
     });
 

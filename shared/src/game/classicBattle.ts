@@ -6,8 +6,13 @@ export interface ClassicBattleConfigOptions {
   bulletSpeed: number;
   minPullDistance: number;
   maxPullDistance: number;
-  turnSwitchDelayMs: number;
   hitPadding: number;
+  initialHp: number;
+  initialEnergy: number;
+  maxEnergy: number;
+  energyRegenPerSecond: number;
+  shotEnergyCost: number;
+  shotDamage: number;
 }
 
 export class ClassicBattleConfig {
@@ -18,8 +23,13 @@ export class ClassicBattleConfig {
   bulletSpeed: number;
   minPullDistance: number;
   maxPullDistance: number;
-  turnSwitchDelayMs: number;
   hitPadding: number;
+  initialHp: number;
+  initialEnergy: number;
+  maxEnergy: number;
+  energyRegenPerSecond: number;
+  shotEnergyCost: number;
+  shotDamage: number;
 
   constructor(options: Partial<ClassicBattleConfigOptions> = {}) {
     this.width = options.width ?? 500;
@@ -29,8 +39,13 @@ export class ClassicBattleConfig {
     this.bulletSpeed = options.bulletSpeed ?? 650;
     this.minPullDistance = options.minPullDistance ?? 18;
     this.maxPullDistance = options.maxPullDistance ?? 150;
-    this.turnSwitchDelayMs = options.turnSwitchDelayMs ?? 450;
     this.hitPadding = options.hitPadding ?? 8;
+    this.initialHp = options.initialHp ?? 100;
+    this.initialEnergy = options.initialEnergy ?? 100;
+    this.maxEnergy = options.maxEnergy ?? 100;
+    this.energyRegenPerSecond = options.energyRegenPerSecond ?? 5;
+    this.shotEnergyCost = options.shotEnergyCost ?? 20;
+    this.shotDamage = options.shotDamage ?? 20;
   }
 }
 
@@ -65,6 +80,8 @@ export interface ClassicBattlePlayerStateOptions {
   y: number;
   hp: number;
   maxHp: number;
+  energy: number;
+  maxEnergy: number;
 }
 
 export class ClassicBattlePlayerState {
@@ -74,6 +91,8 @@ export class ClassicBattlePlayerState {
   y: number;
   hp: number;
   maxHp: number;
+  energy: number;
+  maxEnergy: number;
 
   constructor(options: ClassicBattlePlayerStateOptions) {
     this.id = options.id;
@@ -82,23 +101,25 @@ export class ClassicBattlePlayerState {
     this.y = options.y;
     this.hp = options.hp;
     this.maxHp = options.maxHp;
+    this.energy = options.energy;
+    this.maxEnergy = options.maxEnergy;
   }
 }
 
 export interface ClassicBattleStateOptions {
   players: ClassicBattlePlayerState[];
-  activePlayerId: string;
+  lastEnergyUpdateAtMs: number;
   winnerId?: string | null;
 }
 
 export class ClassicBattleState {
   players: ClassicBattlePlayerState[];
-  activePlayerId: string;
+  lastEnergyUpdateAtMs: number;
   winnerId: string | null;
 
   constructor(options: ClassicBattleStateOptions) {
     this.players = options.players;
-    this.activePlayerId = options.activePlayerId;
+    this.lastEnergyUpdateAtMs = options.lastEnergyUpdateAtMs;
     this.winnerId = options.winnerId ?? null;
   }
 }
@@ -113,6 +134,7 @@ export interface ClassicBattleShotInput {
   shooterId: string;
   pullX: number;
   pullY: number;
+  firedAtMs?: number;
 }
 
 export interface ClassicBattleShotResult {
@@ -121,7 +143,6 @@ export interface ClassicBattleShotResult {
   path: ClassicBattlePoint[];
   hitPlayerId?: string;
   winnerId?: string;
-  nextActivePlayerId: string;
 }
 
 export interface ClassicBattleStatePayload {
@@ -135,9 +156,12 @@ export interface ClassicBattleShotPayload {
 }
 
 export function createClassicBattleState(
-  _config: ClassicBattleConfig,
+  config: ClassicBattleConfig,
   players: ClassicBattlePlayerConfig[],
 ): ClassicBattleState {
+  const maxEnergy = Math.max(0, config.maxEnergy);
+  const initialEnergy = Math.min(Math.max(0, config.initialEnergy), maxEnergy);
+  const initialHp = Math.max(1, config.initialHp);
   const playerStates = players.map(
     (player) =>
       new ClassicBattlePlayerState({
@@ -145,16 +169,16 @@ export function createClassicBattleState(
         name: player.name,
         x: player.startX,
         y: player.startY,
-        hp: player.maxHp,
-        maxHp: player.maxHp,
+        hp: Math.max(1, player.maxHp || initialHp),
+        maxHp: Math.max(1, player.maxHp || initialHp),
+        energy: initialEnergy,
+        maxEnergy,
       }),
   );
 
-  const activePlayerId = playerStates[0]?.id ?? '';
-
   return new ClassicBattleState({
     players: playerStates,
-    activePlayerId,
+    lastEnergyUpdateAtMs: Date.now(),
     winnerId: null,
   });
 }
@@ -170,10 +194,6 @@ export function simulateClassicBattleShot(
     return { state: nextState, error: 'Game already finished.' };
   }
 
-  if (nextState.activePlayerId !== input.shooterId) {
-    return { state: nextState, error: 'Not active player.' };
-  }
-
   const shooter = nextState.players.find((player) => player.id === input.shooterId);
   if (!shooter) {
     return { state: nextState, error: 'Shooter not found.' };
@@ -183,6 +203,15 @@ export function simulateClassicBattleShot(
   if (!target) {
     return { state: nextState, error: 'Target not found.' };
   }
+
+  const shotTimeMs = sanitizeShotTime(input.firedAtMs);
+  regenerateEnergy(config, nextState, shotTimeMs);
+
+  if (shooter.energy < config.shotEnergyCost) {
+    return { state: nextState, error: 'Not enough energy.' };
+  }
+
+  shooter.energy = Math.max(0, shooter.energy - config.shotEnergyCost);
 
   const pullDistance = Math.hypot(input.pullX, input.pullY);
   if (pullDistance < config.minPullDistance) {
@@ -227,19 +256,16 @@ export function simulateClassicBattleShot(
   }
 
   if (hitPlayerId) {
-    target.hp = Math.max(0, target.hp - 1);
+    target.hp = Math.max(0, target.hp - config.shotDamage);
     if (target.hp === 0) {
       nextState.winnerId = shooter.id;
     }
   }
 
-  nextState.activePlayerId = target.id;
-
   const shot: ClassicBattleShotResult = {
     shotId: input.shotId,
     shooterId: input.shooterId,
     path,
-    nextActivePlayerId: nextState.activePlayerId,
   };
 
   if (hitPlayerId) {
@@ -263,12 +289,41 @@ function cloneClassicBattleState(state: ClassicBattleState): ClassicBattleState 
         y: player.y,
         hp: player.hp,
         maxHp: player.maxHp,
+        energy: player.energy,
+        maxEnergy: player.maxEnergy,
       }),
   );
 
   return new ClassicBattleState({
     players,
-    activePlayerId: state.activePlayerId,
+    lastEnergyUpdateAtMs: state.lastEnergyUpdateAtMs,
     winnerId: state.winnerId,
   });
+}
+
+function sanitizeShotTime(firedAtMs?: number): number {
+  if (typeof firedAtMs !== 'number' || !Number.isFinite(firedAtMs)) {
+    return Date.now();
+  }
+
+  return firedAtMs;
+}
+
+function regenerateEnergy(config: ClassicBattleConfig, state: ClassicBattleState, nowMs: number): void {
+  const previousMs = Math.max(0, state.lastEnergyUpdateAtMs);
+  if (nowMs <= previousMs) {
+    return;
+  }
+
+  const regenAmount = ((nowMs - previousMs) / 1000) * config.energyRegenPerSecond;
+  if (regenAmount <= 0) {
+    state.lastEnergyUpdateAtMs = nowMs;
+    return;
+  }
+
+  state.players.forEach((player) => {
+    player.energy = Math.min(player.maxEnergy, player.energy + regenAmount);
+  });
+
+  state.lastEnergyUpdateAtMs = nowMs;
 }

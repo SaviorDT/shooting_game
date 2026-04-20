@@ -54,11 +54,13 @@ function handleFire(payload: ClassicBattleFirePayload): void {
   }
 
   const shotId = createShotId();
+  const firedAtMs = Date.now();
   const result = simulateClassicBattleShot(config, state, {
     shotId,
     shooterId: payload.shooterId,
     pullX: payload.pullX,
     pullY: payload.pullY,
+    firedAtMs,
   });
 
   if ('error' in result) {
@@ -73,6 +75,7 @@ function handleFire(payload: ClassicBattleFirePayload): void {
     shooterId: payload.shooterId,
     pullX: payload.pullX,
     pullY: payload.pullY,
+    firedAtMs,
   });
 }
 

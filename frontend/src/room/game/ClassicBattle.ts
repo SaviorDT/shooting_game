@@ -13,7 +13,6 @@ export interface ClassicBattleRendererOptions {
   localPlayerId: string;
   onFire?: (payload: ClassicBattleFirePayload) => void;
   dragLineColor?: number;
-  turnLabelColor?: string;
   uiFontFamily?: string;
   uiFontSize?: number;
   playerColors?: Record<string, number>;
@@ -28,7 +27,6 @@ class ClassicBattleScene extends Phaser.Scene {
   private readonly localPlayerId: string;
   private readonly onFire?: (payload: ClassicBattleFirePayload) => void;
   private readonly dragLineColor: number;
-  private readonly turnLabelColor: string;
   private readonly uiFontFamily: string;
   private readonly uiFontSize: number;
   private readonly playerColors: Record<string, number>;
@@ -38,9 +36,6 @@ class ClassicBattleScene extends Phaser.Scene {
   private dragLine?: Phaser.GameObjects.Graphics;
   private dragOrigin = new Phaser.Math.Vector2();
   private isDragging = false;
-  private isAnimating = false;
-  private activeBullet?: Phaser.GameObjects.Arc;
-  private turnLabel?: Phaser.GameObjects.Text;
 
   constructor(options: ClassicBattleSceneOptions) {
     super({ key: 'ClassicBattleScene' });
@@ -49,7 +44,6 @@ class ClassicBattleScene extends Phaser.Scene {
     this.localPlayerId = options.localPlayerId;
     this.onFire = options.onFire;
     this.dragLineColor = options.dragLineColor ?? 0x8fd1ff;
-    this.turnLabelColor = options.turnLabelColor ?? '#e6f2ff';
     this.uiFontFamily = options.uiFontFamily ?? 'Chakra Petch, sans-serif';
     this.uiFontSize = options.uiFontSize ?? 18;
     this.playerColors = options.playerColors ?? {};
@@ -62,7 +56,6 @@ class ClassicBattleScene extends Phaser.Scene {
 
     this.dragLine = this.add.graphics();
     this.renderPlayers();
-    this.setupTurnLabel();
     this.setupInput();
   }
 
@@ -71,17 +64,12 @@ class ClassicBattleScene extends Phaser.Scene {
     this.state.players.forEach((player) => {
       const label = this.playerLabels.get(player.id);
       if (label) {
-        label.setText(`${player.name} ${player.hp} HP`);
+        label.setText(`${player.name} HP ${Math.ceil(player.hp)} / EN ${Math.floor(player.energy)}`);
       }
     });
-    this.updateTurnLabel();
   }
 
   playShot(shot: ClassicBattleShotResult, nextState: ClassicBattleState): void {
-    if (this.isAnimating) {
-      return;
-    }
-
     if (shot.path.length < 2) {
       this.setState(nextState);
       return;
@@ -94,8 +82,6 @@ class ClassicBattleScene extends Phaser.Scene {
       0xffffff,
     );
     bullet.setDepth(2);
-    this.activeBullet = bullet;
-    this.isAnimating = true;
 
     const track = { t: 0 };
     const totalDuration = Math.max(200, shot.path.length * 12);
@@ -117,8 +103,6 @@ class ClassicBattleScene extends Phaser.Scene {
       },
       onComplete: () => {
         bullet.destroy();
-        this.activeBullet = undefined;
-        this.isAnimating = false;
         this.setState(nextState);
       },
     });
@@ -152,35 +136,19 @@ class ClassicBattleScene extends Phaser.Scene {
     this.setState(this.state);
   }
 
-  private setupTurnLabel(): void {
-    this.turnLabel = this.add
-      .text(this.sceneConfig.width / 2, 16, '', {
-        fontFamily: this.uiFontFamily,
-        fontSize: `${this.uiFontSize}px`,
-        color: this.turnLabelColor,
-      })
-      .setOrigin(0.5, 0);
-
-    this.updateTurnLabel();
-  }
-
   private setupInput(): void {
     this.input.on('gameobjectdown', (pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
-      if (this.state.winnerId || this.activeBullet || this.isAnimating) {
+      if (this.state.winnerId) {
         return;
       }
 
-      if (this.state.activePlayerId !== this.localPlayerId) {
-        return;
-      }
-
-      const activeSprite = this.playerSprites.get(this.state.activePlayerId);
-      if (!activeSprite || gameObject !== activeSprite) {
+      const localSprite = this.playerSprites.get(this.localPlayerId);
+      if (!localSprite || gameObject !== localSprite) {
         return;
       }
 
       this.isDragging = true;
-      this.dragOrigin.set(activeSprite.x, activeSprite.y);
+      this.dragOrigin.set(localSprite.x, localSprite.y);
       this.renderDragLine(pointer.x, pointer.y);
     });
 
@@ -209,16 +177,11 @@ class ClassicBattleScene extends Phaser.Scene {
 
       const clampedVector = pullVector.normalize().scale(Math.min(distance, this.sceneConfig.maxPullDistance));
       this.onFire?.({
-        shooterId: this.state.activePlayerId,
+        shooterId: this.localPlayerId,
         pullX: clampedVector.x,
         pullY: clampedVector.y,
       });
     });
-  }
-
-  private updateTurnLabel(): void {
-    const activePlayer = this.state.players.find((player) => player.id === this.state.activePlayerId);
-    this.turnLabel?.setText(`回合：${activePlayer?.name ?? ''}`);
   }
 
   private renderDragLine(pointerX: number, pointerY: number): void {
@@ -243,7 +206,6 @@ export interface ClassicBattleGameOptions {
   onFire?: (payload: ClassicBattleFirePayload) => void;
   playerColors?: Record<string, number>;
   dragLineColor?: number;
-  turnLabelColor?: string;
   uiFontFamily?: string;
   uiFontSize?: number;
   backgroundColor?: string;
@@ -260,7 +222,6 @@ export class ClassicBattleGame {
       localPlayerId: options.localPlayerId,
       onFire: options.onFire,
       dragLineColor: options.dragLineColor,
-      turnLabelColor: options.turnLabelColor,
       uiFontFamily: options.uiFontFamily,
       uiFontSize: options.uiFontSize,
       playerColors: options.playerColors,
