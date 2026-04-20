@@ -31,8 +31,13 @@ class ClassicBattleScene extends Phaser.Scene {
   private readonly uiFontSize: number;
   private readonly playerColors: Record<string, number>;
   private readonly backgroundColor: string;
+  private readonly statusBarWidth: number;
+  private readonly statusBarHeight: number;
+  private readonly statusBarGap: number;
   private playerSprites = new Map<string, Phaser.GameObjects.Arc>();
-  private playerLabels = new Map<string, Phaser.GameObjects.Text>();
+  private playerNameLabels = new Map<string, Phaser.GameObjects.Text>();
+  private hpBarFills = new Map<string, Phaser.GameObjects.Rectangle>();
+  private energyBarFills = new Map<string, Phaser.GameObjects.Rectangle>();
   private dragLine?: Phaser.GameObjects.Graphics;
   private dragOrigin = new Phaser.Math.Vector2();
   private isDragging = false;
@@ -48,6 +53,9 @@ class ClassicBattleScene extends Phaser.Scene {
     this.uiFontSize = options.uiFontSize ?? 18;
     this.playerColors = options.playerColors ?? {};
     this.backgroundColor = options.backgroundColor ?? '#0a1021';
+    this.statusBarWidth = this.sceneConfig.playerRadius * 2.6;
+    this.statusBarHeight = 6;
+    this.statusBarGap = 4;
   }
 
   create(): void {
@@ -62,10 +70,12 @@ class ClassicBattleScene extends Phaser.Scene {
   setState(state: ClassicBattleState): void {
     this.state = state;
     this.state.players.forEach((player) => {
-      const label = this.playerLabels.get(player.id);
+      const label = this.playerNameLabels.get(player.id);
       if (label) {
-        label.setText(`${player.name} HP ${Math.ceil(player.hp)} / EN ${Math.floor(player.energy)}`);
+        label.setText(player.name);
       }
+
+      this.updatePlayerStatusBars(player);
     });
   }
 
@@ -123,14 +133,50 @@ class ClassicBattleScene extends Phaser.Scene {
       sprite.setInteractive(hitArea, Phaser.Geom.Circle.Contains);
       this.playerSprites.set(player.id, sprite);
 
-      const hpText = this.add
-        .text(player.x, player.y - this.sceneConfig.playerRadius - 10, '', {
+      const barsTopY = player.y - this.sceneConfig.playerRadius - 18;
+      const barLeftX = player.x - this.statusBarWidth / 2;
+
+      this.add
+        .rectangle(player.x, barsTopY, this.statusBarWidth, this.statusBarHeight, 0x2c3550, 0.85)
+        .setDepth(1);
+      const hpFill = this.add
+        .rectangle(barLeftX, barsTopY, this.statusBarWidth, this.statusBarHeight, 0x59d98e, 1)
+        .setOrigin(0, 0.5)
+        .setDepth(2);
+      this.hpBarFills.set(player.id, hpFill);
+
+      this.add
+        .rectangle(
+          player.x,
+          barsTopY + this.statusBarHeight + this.statusBarGap,
+          this.statusBarWidth,
+          this.statusBarHeight,
+          0x2c3550,
+          0.85,
+        )
+        .setDepth(1);
+      const energyFill = this.add
+        .rectangle(
+          barLeftX,
+          barsTopY + this.statusBarHeight + this.statusBarGap,
+          this.statusBarWidth,
+          this.statusBarHeight,
+          0x5db8ff,
+          1,
+        )
+        .setOrigin(0, 0.5)
+        .setDepth(2);
+      this.energyBarFills.set(player.id, energyFill);
+
+      const nameText = this.add
+        .text(player.x, barsTopY - 6, '', {
           fontFamily: this.uiFontFamily,
-          fontSize: `${this.uiFontSize}px`,
+          fontSize: `${Math.max(12, this.uiFontSize - 4)}px`,
           color: '#cfe2ff',
         })
-        .setOrigin(0.5, 1);
-      this.playerLabels.set(player.id, hpText);
+        .setOrigin(0.5, 1)
+        .setDepth(2);
+      this.playerNameLabels.set(player.id, nameText);
     });
 
     this.setState(this.state);
@@ -195,6 +241,22 @@ class ClassicBattleScene extends Phaser.Scene {
 
   private clearDragLine(): void {
     this.dragLine?.clear();
+  }
+
+  private updatePlayerStatusBars(player: ClassicBattleState['players'][number]): void {
+    const hpFill = this.hpBarFills.get(player.id);
+    if (hpFill) {
+      const hpRatio = player.maxHp > 0 ? Phaser.Math.Clamp(player.hp / player.maxHp, 0, 1) : 0;
+      hpFill.setSize(this.statusBarWidth * hpRatio, this.statusBarHeight);
+      hpFill.fillColor = hpRatio > 0.5 ? 0x59d98e : hpRatio > 0.25 ? 0xf8bf5a : 0xf56b6b;
+    }
+
+    const energyFill = this.energyBarFills.get(player.id);
+    if (energyFill) {
+      const energyRatio = player.maxEnergy > 0 ? Phaser.Math.Clamp(player.energy / player.maxEnergy, 0, 1) : 0;
+      energyFill.setSize(this.statusBarWidth * energyRatio, this.statusBarHeight);
+      energyFill.fillColor = 0x5db8ff;
+    }
   }
 }
 
