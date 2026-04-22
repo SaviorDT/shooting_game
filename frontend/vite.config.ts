@@ -19,6 +19,9 @@ export default defineConfig({
   server: {
     host: '0.0.0.0', // 務必設定，否則 Docker 外部連不進去
     port: 5173,
+    allowedHosts: [
+      'tdl.ddns.net',
+    ],
     fs: {
       allow: [workspaceRoot],
     },

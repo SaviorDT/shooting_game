@@ -43,6 +43,7 @@ const isTransferringHost = ref(false);
 const settingsError = ref('');
 const gameState = ref<ClassicBattleState | null>(null);
 const gameConfig = ref<ClassicBattleConfig | null>(null);
+const isViewingGame = ref(false);
 
 const players = computed(() =>
   members.value.map((member) => ({
@@ -160,6 +161,7 @@ function onAction(): void {
 }
 
 function onExitGame(): void {
+  isViewingGame.value = false;
   gameState.value = null;
   gameConfig.value = null;
 }
@@ -241,6 +243,20 @@ function applyGameState(payload: ClassicBattleStatePayload): void {
     return;
   }
 
+  if (!isViewingGame.value) {
+    return;
+  }
+
+  gameConfig.value = new ClassicBattleConfig(payload.config);
+  gameState.value = new ClassicBattleState(payload.state);
+}
+
+function onGameStarted(payload: ClassicBattleStatePayload): void {
+  if (!isMounted || !payload?.state || !payload?.config) {
+    return;
+  }
+
+  isViewingGame.value = true;
   gameConfig.value = new ClassicBattleConfig(payload.config);
   gameState.value = new ClassicBattleState(payload.state);
 }
@@ -248,7 +264,7 @@ function applyGameState(payload: ClassicBattleStatePayload): void {
 onMounted(async () => {
   isMounted = true;
   const activeRoom = getActiveRoom();
-  activeRoom?.onMessage('game.started', applyGameState);
+  activeRoom?.onMessage('game.started', onGameStarted);
   activeRoom?.onMessage('game.state', applyGameState);
   activeRoom?.onMessage('players.status', (data: { members: RoomMemberSummary[] }) => {
     if (isMounted) {

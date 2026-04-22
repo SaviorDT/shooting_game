@@ -31,6 +31,7 @@ export class BattleRoom extends Room {
   private roomPassword = '';
   private readonly players = new Map<string, RoomPlayer>();
   private readonly classicBattle = new ClassicBattleService();
+  private statSyncTimer?: ReturnType<typeof this.clock.setInterval>;
 
   onCreate(options: BattleRoomOptions): void {
     this.currentRoomName = options.roomName.trim();
@@ -56,6 +57,13 @@ export class BattleRoom extends Room {
     this.onMessage('game.fire', (client, payload) => {
       this.handleGameFire(client, payload as { shotId: string; shooterId: string; pullX: number; pullY: number; firedAtMs?: number });
     });
+
+    this.statSyncTimer = this.clock.setInterval(() => {
+      const payload = this.classicBattle.tick(Date.now());
+      if (payload) {
+        this.broadcast('game.state', payload);
+      }
+    }, 50);
   }
 
   onAuth(_client: Client, options?: PlayerJoinOptions): boolean {
@@ -87,10 +95,10 @@ export class BattleRoom extends Room {
 
     const currentState = this.classicBattle.getState();
     if (currentState) {
-      client.send('game.state', {
-        config: this.classicBattle.getConfig(),
-        state: currentState,
-      });
+      const payload = this.classicBattle.buildStatePayload();
+      if (payload) {
+        client.send('game.state', payload);
+      }
     }
   }
 
@@ -128,6 +136,11 @@ export class BattleRoom extends Room {
   }
 
   onDispose(): void {
+    if (this.statSyncTimer) {
+      this.statSyncTimer.clear();
+      this.statSyncTimer = undefined;
+    }
+
     // Reserved for future room cleanup.
   }
 

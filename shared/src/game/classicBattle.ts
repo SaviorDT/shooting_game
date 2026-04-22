@@ -1,3 +1,6 @@
+import { PHYSICS_FIXED_DELTA, SimplePhysicsEngine } from '../engine/simplePhysicsEngine.js';
+import type { PhysicsEngineStat } from '../engine/simplePhysicsEngine.js';
+
 export interface ClassicBattleConfigOptions {
   width: number;
   height: number;
@@ -148,11 +151,13 @@ export interface ClassicBattleShotResult {
 export interface ClassicBattleStatePayload {
   config: ClassicBattleConfig;
   state: ClassicBattleState;
+  physicsStat: PhysicsEngineStat;
 }
 
 export interface ClassicBattleShotPayload {
   shot: ClassicBattleShotResult;
   state: ClassicBattleState;
+  physicsStat: PhysicsEngineStat;
 }
 
 export function createClassicBattleState(
@@ -225,35 +230,16 @@ export function simulateClassicBattleShot(
   const velocityX = directionX * config.bulletSpeed * power;
   const velocityY = directionY * config.bulletSpeed * power;
 
-  const path: ClassicBattlePoint[] = [{ x: shooter.x, y: shooter.y }];
-  const dt = 1 / 60;
-  const maxSteps = 360;
-  const hitRadius = config.playerRadius + config.bulletRadius + config.hitPadding;
-  let hitPlayerId: string | undefined;
+  const simulation = simulateShotPathWithPhysics(config, {
+    shotId: input.shotId,
+    shooter,
+    target,
+    velocityX,
+    velocityY,
+  });
 
-  let bulletX = shooter.x;
-  let bulletY = shooter.y;
-
-  for (let step = 0; step < maxSteps; step += 1) {
-    bulletX += velocityX * dt;
-    bulletY += velocityY * dt;
-
-    if (step % 2 === 0) {
-      path.push({ x: bulletX, y: bulletY });
-    }
-
-    const distanceToTarget = Math.hypot(bulletX - target.x, bulletY - target.y);
-    if (distanceToTarget <= hitRadius) {
-      hitPlayerId = target.id;
-      break;
-    }
-
-    const outsideX = bulletX < -config.bulletRadius || bulletX > config.width + config.bulletRadius;
-    const outsideY = bulletY < -config.bulletRadius || bulletY > config.height + config.bulletRadius;
-    if (outsideX || outsideY) {
-      break;
-    }
-  }
+  const path = simulation.path;
+  const hitPlayerId = simulation.hitPlayerId;
 
   if (hitPlayerId) {
     target.hp = Math.max(0, target.hp - config.shotDamage);
@@ -277,6 +263,85 @@ export function simulateClassicBattleShot(
   }
 
   return { state: nextState, shot };
+}
+
+interface PhysicsShotSimulationInput {
+  shotId: string;
+  shooter: ClassicBattlePlayerState;
+  target: ClassicBattlePlayerState;
+  velocityX: number;
+  velocityY: number;
+}
+
+function simulateShotPathWithPhysics(
+  config: ClassicBattleConfig,
+  input: PhysicsShotSimulationInput,
+): { path: ClassicBattlePoint[]; hitPlayerId?: string } {
+  const engine = new SimplePhysicsEngine();
+  let hitPlayerId: string | undefined;
+
+  const projectileId = `shot:${input.shotId}`;
+  const maxSimulationSeconds = 6;
+  const maxSteps = Math.ceil(maxSimulationSeconds / PHYSICS_FIXED_DELTA);
+
+  engine.CreatePlayer({
+    id: input.target.id,
+    name: input.target.id,
+    radius: config.playerRadius + config.hitPadding,
+    position: { x: input.target.x, y: input.target.y },
+    velocity: { x: 0, y: 0 },
+    viscosity: 0,
+    drag: 0,
+    collidable: true,
+  });
+
+  engine.CreateProjectile({
+    id: projectileId,
+    name: projectileId,
+    radius: config.bulletRadius,
+    position: { x: input.shooter.x, y: input.shooter.y },
+    velocity: { x: input.velocityX, y: input.velocityY },
+    viscosity: 0,
+    drag: 0,
+    collidable: true,
+    lifetime: maxSimulationSeconds,
+    groundedSpeedThreshold: 0,
+    onCollide: (other) => {
+      if (other === input.target.id) {
+        hitPlayerId = input.target.id;
+      }
+    },
+  });
+
+  const path: ClassicBattlePoint[] = [{ x: input.shooter.x, y: input.shooter.y }];
+  let simulationTime = 0;
+
+  for (let step = 0; step < maxSteps; step += 1) {
+    simulationTime += PHYSICS_FIXED_DELTA;
+    const stat = engine.Update(simulationTime);
+    const projectile = stat.objects.find((object) => object.id === projectileId);
+
+    if (!projectile) {
+      break;
+    }
+
+    path.push({ x: projectile.position.x, y: projectile.position.y });
+
+    const outsideX = projectile.position.x < -config.bulletRadius
+      || projectile.position.x > config.width + config.bulletRadius;
+    const outsideY = projectile.position.y < -config.bulletRadius
+      || projectile.position.y > config.height + config.bulletRadius;
+
+    if (outsideX || outsideY || projectile.grounded) {
+      break;
+    }
+  }
+
+  if (hitPlayerId) {
+    return { path, hitPlayerId };
+  }
+
+  return { path };
 }
 
 function cloneClassicBattleState(state: ClassicBattleState): ClassicBattleState {

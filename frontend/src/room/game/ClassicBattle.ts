@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ClassicBattleConfig, ClassicBattleShotResult, ClassicBattleState } from 'shared';
+import { ClassicBattleConfig, ClassicBattleShotResult, ClassicBattleState, SimplePhysicsEngine, type PhysicsEngineStat } from 'shared';
 
 export interface ClassicBattleFirePayload {
   shooterId: string;
@@ -10,6 +10,7 @@ export interface ClassicBattleFirePayload {
 export interface ClassicBattleRendererOptions {
   config: ClassicBattleConfig;
   state: ClassicBattleState;
+  physicsStat?: PhysicsEngineStat;
   localPlayerId: string;
   onFire?: (payload: ClassicBattleFirePayload) => void;
   dragLineColor?: number;
@@ -35,9 +36,14 @@ class ClassicBattleScene extends Phaser.Scene {
   private readonly statusBarHeight: number;
   private readonly statusBarGap: number;
   private playerSprites = new Map<string, Phaser.GameObjects.Arc>();
+  private projectileSprites = new Map<string, Phaser.GameObjects.Arc>();
   private playerNameLabels = new Map<string, Phaser.GameObjects.Text>();
   private hpBarFills = new Map<string, Phaser.GameObjects.Rectangle>();
   private energyBarFills = new Map<string, Phaser.GameObjects.Rectangle>();
+  private physicsStat: PhysicsEngineStat | null;
+  private readonly physicsPredictor: SimplePhysicsEngine;
+  private physicsStatReceivedAtMs = 0;
+  private readonly maxPredictionSeconds = 0.25;
   private dragLine?: Phaser.GameObjects.Graphics;
   private dragOrigin = new Phaser.Math.Vector2();
   private isDragging = false;
@@ -56,6 +62,12 @@ class ClassicBattleScene extends Phaser.Scene {
     this.statusBarWidth = this.sceneConfig.playerRadius * 2.6;
     this.statusBarHeight = 6;
     this.statusBarGap = 4;
+    this.physicsStat = options.physicsStat ?? null;
+    this.physicsPredictor = new SimplePhysicsEngine();
+    this.physicsStatReceivedAtMs = this.nowMs();
+    if (this.physicsStat) {
+      this.physicsPredictor.SetStat(this.physicsStat);
+    }
   }
 
   create(): void {
@@ -64,6 +76,7 @@ class ClassicBattleScene extends Phaser.Scene {
 
     this.dragLine = this.add.graphics();
     this.renderPlayers();
+    this.applyPhysicsStat();
     this.setupInput();
   }
 
@@ -116,6 +129,17 @@ class ClassicBattleScene extends Phaser.Scene {
         this.setState(nextState);
       },
     });
+  }
+
+  setPhysicsStat(stat: PhysicsEngineStat): void {
+    this.physicsStat = stat;
+    this.physicsPredictor.SetStat(stat);
+    this.physicsStatReceivedAtMs = this.nowMs();
+    this.applyPhysicsStat();
+  }
+
+  update(): void {
+    this.applyPhysicsStat();
   }
 
   private renderPlayers(): void {
@@ -243,6 +267,61 @@ class ClassicBattleScene extends Phaser.Scene {
     this.dragLine?.clear();
   }
 
+  private applyPhysicsStat(): void {
+    if (!this.physicsStat) {
+      return;
+    }
+
+    const elapsedSeconds = Math.max(0, (this.nowMs() - this.physicsStatReceivedAtMs) / 1000);
+    const horizon = Math.min(this.maxPredictionSeconds, elapsedSeconds);
+    const predictedStat = horizon <= 0
+      ? this.physicsStat
+      : this.physicsPredictor.Predict(this.physicsStat.lastUpdateTime, this.physicsStat.lastUpdateTime + horizon);
+
+    const visibleProjectileIds = new Set<string>();
+
+    predictedStat.objects.forEach((object) => {
+      if (object.type === 'player') {
+        const sprite = this.playerSprites.get(object.id);
+        if (sprite) {
+          sprite.setPosition(object.position.x, object.position.y);
+        }
+
+        return;
+      }
+
+      const shouldRender = !object.grounded;
+      if (!shouldRender) {
+        return;
+      }
+
+      visibleProjectileIds.add(object.id);
+      let projectile = this.projectileSprites.get(object.id);
+      if (!projectile) {
+        projectile = this.add.circle(object.position.x, object.position.y, object.radius, 0xffffff, 0.95);
+        projectile.setDepth(3);
+        this.projectileSprites.set(object.id, projectile);
+      } else {
+        projectile.setPosition(object.position.x, object.position.y);
+      }
+    });
+
+    this.projectileSprites.forEach((sprite, projectileId) => {
+      if (!visibleProjectileIds.has(projectileId)) {
+        sprite.destroy();
+        this.projectileSprites.delete(projectileId);
+      }
+    });
+  }
+
+  private nowMs(): number {
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+      return performance.now();
+    }
+
+    return Date.now();
+  }
+
   private updatePlayerStatusBars(player: ClassicBattleState['players'][number]): void {
     const hpFill = this.hpBarFills.get(player.id);
     if (hpFill) {
@@ -264,6 +343,7 @@ export interface ClassicBattleGameOptions {
   parent: HTMLElement;
   config: ClassicBattleConfig;
   state: ClassicBattleState;
+  physicsStat?: PhysicsEngineStat;
   localPlayerId: string;
   onFire?: (payload: ClassicBattleFirePayload) => void;
   playerColors?: Record<string, number>;
@@ -281,6 +361,7 @@ export class ClassicBattleGame {
     this.scene = new ClassicBattleScene({
       config: options.config,
       state: options.state,
+      physicsStat: options.physicsStat,
       localPlayerId: options.localPlayerId,
       onFire: options.onFire,
       dragLineColor: options.dragLineColor,
@@ -319,6 +400,10 @@ export class ClassicBattleGame {
 
   playShot(shot: ClassicBattleShotResult, nextState: ClassicBattleState): void {
     this.scene.playShot(shot, nextState);
+  }
+
+  setPhysicsStat(stat: PhysicsEngineStat): void {
+    this.scene.setPhysicsStat(stat);
   }
 
   destroy(): void {

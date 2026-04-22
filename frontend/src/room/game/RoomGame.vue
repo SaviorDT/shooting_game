@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   ClassicBattleConfig,
   ClassicBattleState,
-  simulateClassicBattleShot,
+  type PhysicsEngineStat,
   type ClassicBattleShotPayload,
   type ClassicBattleStatePayload,
 } from 'shared';
@@ -24,8 +24,8 @@ const emit = defineEmits<{
 const gameRoot = ref<HTMLDivElement | null>(null);
 const currentState = ref<ClassicBattleState | null>(props.state);
 const currentConfig = ref<ClassicBattleConfig | null>(props.config);
+const currentPhysicsStat = ref<PhysicsEngineStat | null>(null);
 let game: ClassicBattleGame | null = null;
-let pendingShotId: string | null = null;
 let isMounted = true;
 
 const playerColors = computed(() => {
@@ -47,29 +47,12 @@ const winnerName = computed(() => {
 const isGameOver = computed(() => Boolean(currentState.value?.winnerId));
 
 function handleFire(payload: ClassicBattleFirePayload): void {
-  const config = currentConfig.value;
-  const state = currentState.value;
-  if (!config || !state) {
+  if (!currentConfig.value || !currentState.value) {
     return;
   }
 
   const shotId = createShotId();
   const firedAtMs = Date.now();
-  const result = simulateClassicBattleShot(config, state, {
-    shotId,
-    shooterId: payload.shooterId,
-    pullX: payload.pullX,
-    pullY: payload.pullY,
-    firedAtMs,
-  });
-
-  if ('error' in result) {
-    return;
-  }
-
-  pendingShotId = shotId;
-  currentState.value = result.state;
-  game?.playShot(result.shot, result.state);
   sendRoomMessage('game.fire', {
     shotId,
     shooterId: payload.shooterId,
@@ -86,8 +69,12 @@ function applyStatePayload(payload: ClassicBattleStatePayload): void {
 
   currentConfig.value = new ClassicBattleConfig(payload.config);
   currentState.value = new ClassicBattleState(payload.state);
+  currentPhysicsStat.value = payload.physicsStat;
   if (game && currentState.value) {
     game.setState(currentState.value);
+    if (currentPhysicsStat.value) {
+      game.setPhysicsStat(currentPhysicsStat.value);
+    }
   }
 }
 
@@ -98,14 +85,11 @@ function applyShotPayload(payload: ClassicBattleShotPayload): void {
 
   const nextState = new ClassicBattleState(payload.state);
   currentState.value = nextState;
-
-  if (pendingShotId && payload.shot.shotId === pendingShotId) {
-    pendingShotId = null;
-    game?.setState(nextState);
-    return;
+  currentPhysicsStat.value = payload.physicsStat;
+  game?.setState(nextState);
+  if (currentPhysicsStat.value) {
+    game?.setPhysicsStat(currentPhysicsStat.value);
   }
-
-  game?.playShot(payload.shot, nextState);
 }
 
 onMounted(() => {
@@ -128,6 +112,7 @@ onMounted(() => {
     onFire: handleFire,
     playerColors: playerColors.value,
     backgroundColor: '#0a1021',
+    physicsStat: currentPhysicsStat.value ?? undefined,
   });
 });
 
