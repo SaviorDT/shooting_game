@@ -15,6 +15,7 @@ export interface ClassicBattleConfigOptions {
   maxEnergy: number;
   energyRegenPerSecond: number;
   shotEnergyCost: number;
+  moveShotEnergyCost: number;
   shotDamage: number;
 }
 
@@ -32,6 +33,7 @@ export class ClassicBattleConfig {
   maxEnergy: number;
   energyRegenPerSecond: number;
   shotEnergyCost: number;
+  moveShotEnergyCost: number;
   shotDamage: number;
 
   constructor(options: Partial<ClassicBattleConfigOptions> = {}) {
@@ -48,9 +50,12 @@ export class ClassicBattleConfig {
     this.maxEnergy = options.maxEnergy ?? 100;
     this.energyRegenPerSecond = options.energyRegenPerSecond ?? 5;
     this.shotEnergyCost = options.shotEnergyCost ?? 20;
+    this.moveShotEnergyCost = options.moveShotEnergyCost ?? 30;
     this.shotDamage = options.shotDamage ?? 20;
   }
 }
+
+export type ClassicBattleBulletType = 'normal' | 'move';
 
 export interface ClassicBattlePlayerOptions {
   id: string;
@@ -137,12 +142,14 @@ export interface ClassicBattleShotInput {
   shooterId: string;
   pullX: number;
   pullY: number;
-  firedAtMs?: number;
+  firedAtMs: number;
+  bullet: ClassicBattleBulletType;
 }
 
 export interface ClassicBattleShotResult {
   shotId: string;
   shooterId: string;
+  bullet: ClassicBattleBulletType;
   path: ClassicBattlePoint[];
   hitPlayerId?: string;
   winnerId?: string;
@@ -212,11 +219,14 @@ export function simulateClassicBattleShot(
   const shotTimeMs = sanitizeShotTime(input.firedAtMs);
   regenerateEnergy(config, nextState, shotTimeMs);
 
-  if (shooter.energy < config.shotEnergyCost) {
+  const isMoveBullet = input.bullet === 'move';
+  const shotEnergyCost = isMoveBullet ? config.moveShotEnergyCost : config.shotEnergyCost;
+
+  if (shooter.energy < shotEnergyCost) {
     return { state: nextState, error: 'Not enough energy.' };
   }
 
-  shooter.energy = Math.max(0, shooter.energy - config.shotEnergyCost);
+  shooter.energy = Math.max(0, shooter.energy - shotEnergyCost);
 
   const pullDistance = Math.hypot(input.pullX, input.pullY);
   if (pullDistance < config.minPullDistance) {
@@ -230,13 +240,15 @@ export function simulateClassicBattleShot(
   const velocityX = directionX * config.bulletSpeed * power;
   const velocityY = directionY * config.bulletSpeed * power;
 
-  const simulation = simulateShotPathWithPhysics(config, {
-    shotId: input.shotId,
-    shooter,
-    target,
-    velocityX,
-    velocityY,
-  });
+  const simulation = isMoveBullet
+    ? { path: [{ x: shooter.x, y: shooter.y }] }
+    : simulateShotPathWithPhysics(config, {
+      shotId: input.shotId,
+      shooter,
+      target,
+      velocityX,
+      velocityY,
+    });
 
   const path = simulation.path;
   const hitPlayerId = simulation.hitPlayerId;
@@ -251,6 +263,7 @@ export function simulateClassicBattleShot(
   const shot: ClassicBattleShotResult = {
     shotId: input.shotId,
     shooterId: input.shooterId,
+    bullet: input.bullet,
     path,
   };
 
@@ -366,7 +379,7 @@ function cloneClassicBattleState(state: ClassicBattleState): ClassicBattleState 
   });
 }
 
-function sanitizeShotTime(firedAtMs?: number): number {
+function sanitizeShotTime(firedAtMs: number): number {
   if (typeof firedAtMs !== 'number' || !Number.isFinite(firedAtMs)) {
     return Date.now();
   }

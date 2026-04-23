@@ -1,4 +1,6 @@
 import {
+  type PhysicsEngineStat,
+  type PhysicsObjectState,
   ClassicBattleConfig,
   ClassicBattlePlayerConfig,
   ClassicBattleShotInput,
@@ -39,6 +41,7 @@ export class ClassicBattleService {
         maxEnergy: 100,
         energyRegenPerSecond: 5,
         shotEnergyCost: 20,
+        moveShotEnergyCost: 30,
         shotDamage: 20,
       });
   }
@@ -113,7 +116,10 @@ export class ClassicBattleService {
       return { error: 'Shooter not found.' };
     }
 
-    if (shooter.energy < this.config.shotEnergyCost) {
+    const isMoveBullet = input.bullet === 'move';
+    const shotEnergyCost = isMoveBullet ? this.config.moveShotEnergyCost : this.config.shotEnergyCost;
+
+    if (shooter.energy < shotEnergyCost) {
       return { error: 'Not enough energy.' };
     }
 
@@ -122,7 +128,7 @@ export class ClassicBattleService {
       return { error: 'Pull distance too short.' };
     }
 
-    shooter.energy = Math.max(0, shooter.energy - this.config.shotEnergyCost);
+    shooter.energy = Math.max(0, shooter.energy - shotEnergyCost);
 
     const clampedDistance = Math.min(pullDistance, this.config.maxPullDistance);
     const power = clampedDistance / this.config.maxPullDistance;
@@ -131,35 +137,43 @@ export class ClassicBattleService {
     const velocityX = directionX * this.config.bulletSpeed * power;
     const velocityY = directionY * this.config.bulletSpeed * power;
 
-    const spawnOffset = this.config.playerRadius + this.config.hitPadding + this.config.bulletRadius + 1;
-    const spawnX = shooter.x + directionX * spawnOffset;
-    const spawnY = shooter.y + directionY * spawnOffset;
-    const projectileId = `shot:${input.shotId}`;
+    let path = [{ x: shooter.x, y: shooter.y }];
 
-    const mapDiagonal = Math.hypot(this.config.width, this.config.height);
-    const bulletSpeed = Math.max(1, this.config.bulletSpeed * power);
-    const projectileLifetime = Math.max(1, mapDiagonal / bulletSpeed + PHYSICS_FIXED_DELTA * 2);
+    if (isMoveBullet) {
+      this.setPlayerVelocity(shooter.id, velocityX, velocityY);
+    } else {
+      const spawnOffset = this.config.playerRadius + this.config.hitPadding + this.config.bulletRadius + 1;
+      const spawnX = shooter.x + directionX * spawnOffset;
+      const spawnY = shooter.y + directionY * spawnOffset;
+      const projectileId = `shot:${input.shotId}`;
 
-    this.engine.CreateProjectile({
-      id: projectileId,
-      name: projectileId,
-      radius: this.config.bulletRadius,
-      position: { x: spawnX, y: spawnY },
-      velocity: { x: velocityX, y: velocityY },
-      viscosity: 0,
-      drag: 0,
-      collidable: true,
-      lifetime: projectileLifetime,
-      groundedSpeedThreshold: 0,
-      onCollide: (other) => {
-        this.onProjectileCollide(shooter.id, other);
-      },
-    });
+      const mapDiagonal = Math.hypot(this.config.width, this.config.height);
+      const bulletSpeed = Math.max(1, this.config.bulletSpeed * power);
+      const projectileLifetime = Math.max(1, mapDiagonal / bulletSpeed + PHYSICS_FIXED_DELTA * 2);
+
+      this.engine.CreateProjectile({
+        id: projectileId,
+        name: projectileId,
+        radius: this.config.bulletRadius,
+        position: { x: spawnX, y: spawnY },
+        velocity: { x: velocityX, y: velocityY },
+        viscosity: 0,
+        drag: 0,
+        collidable: true,
+        lifetime: projectileLifetime,
+        groundedSpeedThreshold: 0,
+        onCollide: (other) => {
+          this.onProjectileCollide(shooter.id, other);
+        },
+      });
+      path = [{ x: spawnX, y: spawnY }];
+    }
 
     const shot: ClassicBattleShotResult = {
       shotId: input.shotId,
       shooterId: input.shooterId,
-      path: [{ x: spawnX, y: spawnY }],
+      bullet: input.bullet,
+      path,
     };
 
     return {
@@ -257,12 +271,113 @@ export class ClassicBattleService {
     regenerateEnergy(this.config, this.state, targetMs);
 
     const simulationSeconds = Math.max(0, (targetMs - this.startedAtMs) / 1000);
-    this.engine.Update(simulationSeconds);
+    const stat = this.engine.Update(simulationSeconds);
+    const nextStat = this.applyPlayerBoundaryBounce(stat);
+    this.syncPlayersFromPhysics(nextStat);
     this.lastTickAtMs = targetMs;
+  }
+
+  private setPlayerVelocity(playerId: string, velocityX: number, velocityY: number): void {
+    if (!this.engine) {
+      return;
+    }
+
+    const stat = this.engine.GetStat();
+    let changed = false;
+
+    stat.objects.forEach((object) => {
+      if (object.type !== 'player' || object.id !== playerId) {
+        return;
+      }
+
+      object.velocity.x = velocityX;
+      object.velocity.y = velocityY;
+      changed = true;
+    });
+
+    if (changed) {
+      this.engine.SetStat(stat);
+      this.syncPlayersFromPhysics(stat);
+    }
+  }
+
+  private applyPlayerBoundaryBounce(stat: PhysicsEngineStat): PhysicsEngineStat {
+    if (!this.engine) {
+      return stat;
+    }
+
+    let changed = false;
+
+    stat.objects.forEach((object) => {
+      if (object.type !== 'player') {
+        return;
+      }
+
+      changed = this.bouncePlayerAtMapEdge(object) || changed;
+    });
+
+    if (changed) {
+      this.engine.SetStat(stat);
+    }
+
+    return stat;
+  }
+
+  private bouncePlayerAtMapEdge(playerObject: PhysicsObjectState): boolean {
+    let changed = false;
+
+    const minX = playerObject.radius;
+    const maxX = this.config.width - playerObject.radius;
+    const minY = playerObject.radius;
+    const maxY = this.config.height - playerObject.radius;
+
+    if (playerObject.position.x < minX) {
+      playerObject.position.x = minX;
+      playerObject.velocity.x = Math.abs(playerObject.velocity.x);
+      changed = true;
+    } else if (playerObject.position.x > maxX) {
+      playerObject.position.x = maxX;
+      playerObject.velocity.x = -Math.abs(playerObject.velocity.x);
+      changed = true;
+    }
+
+    if (playerObject.position.y < minY) {
+      playerObject.position.y = minY;
+      playerObject.velocity.y = Math.abs(playerObject.velocity.y);
+      changed = true;
+    } else if (playerObject.position.y > maxY) {
+      playerObject.position.y = maxY;
+      playerObject.velocity.y = -Math.abs(playerObject.velocity.y);
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  private syncPlayersFromPhysics(stat: PhysicsEngineStat): void {
+    if (!this.state) {
+      return;
+    }
+
+    const playerObjects = new Map(
+      stat.objects
+        .filter((object) => object.type === 'player')
+        .map((object) => [object.id, object]),
+    );
+
+    this.state.players.forEach((player) => {
+      const object = playerObjects.get(player.id);
+      if (!object) {
+        return;
+      }
+
+      player.x = object.position.x;
+      player.y = object.position.y;
+    });
   }
 }
 
-function sanitizeShotTime(firedAtMs?: number): number {
+function sanitizeShotTime(firedAtMs: number): number {
   if (typeof firedAtMs !== 'number' || !Number.isFinite(firedAtMs)) {
     return Date.now();
   }

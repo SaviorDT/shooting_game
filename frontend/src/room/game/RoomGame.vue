@@ -59,6 +59,7 @@ function handleFire(payload: ClassicBattleFirePayload): void {
     pullX: payload.pullX,
     pullY: payload.pullY,
     firedAtMs,
+    bullet: payload.bullet,
   });
 }
 
@@ -177,27 +178,30 @@ function createShotId(): string {
 
 <style scoped>
 .game-page {
-  height: 100vh;
-  width: 100vw;
-  margin: 0;
-  display: grid;
-  place-items: center;
+  position: fixed;
+  inset: 0;
   overflow: hidden;
   background: radial-gradient(circle at top, rgba(48, 128, 207, 0.2), transparent 55%),
     linear-gradient(180deg, #0a1021, #070c19);
 }
 
 .game-stage {
-  width: min(100vw, 520px);
-  height: min(100vh, 860px);
-  display: grid;
-  place-items: center;
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  min-width: 0;
 }
 
 .game-root {
   width: 100%;
   height: 100%;
-  aspect-ratio: 5 / 8;
+  min-height: 0;
+}
+
+.game-root :deep(canvas) {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .game-result {

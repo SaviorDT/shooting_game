@@ -55,7 +55,17 @@ export class BattleRoom extends Room {
     });
 
     this.onMessage('game.fire', (client, payload) => {
-      this.handleGameFire(client, payload as { shotId: string; shooterId: string; pullX: number; pullY: number; firedAtMs?: number });
+      this.handleGameFire(
+        client,
+        payload as {
+          shotId: string;
+          shooterId: string;
+          pullX: number;
+          pullY: number;
+          firedAtMs: number;
+          bullet: 'normal' | 'move';
+        },
+      );
     });
 
     this.statSyncTimer = this.clock.setInterval(() => {
@@ -357,9 +367,23 @@ export class BattleRoom extends Room {
 
   private handleGameFire(
     client: Client,
-    payload: { shotId: string; shooterId: string; pullX: number; pullY: number; firedAtMs?: number },
+    payload: {
+      shotId: string;
+      shooterId: string;
+      pullX: number;
+      pullY: number;
+      firedAtMs: number;
+      bullet: 'normal' | 'move';
+    },
   ): void {
-    if (!payload || payload.shooterId !== client.sessionId) {
+    const isBulletTypeValid = payload?.bullet === 'normal' || payload?.bullet === 'move';
+
+    if (
+      !payload
+      || payload.shooterId !== client.sessionId
+      || !Number.isFinite(payload.firedAtMs)
+      || !isBulletTypeValid
+    ) {
       client.send('game.error', { error: 'Invalid shooter.' });
       return;
     }
