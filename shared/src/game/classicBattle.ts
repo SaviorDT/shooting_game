@@ -17,6 +17,7 @@ export interface ClassicBattleConfigOptions {
   shotEnergyCost: number;
   moveShotEnergyCost: number;
   shotDamage: number;
+  playerViscosity: number;
 }
 
 export class ClassicBattleConfig {
@@ -35,6 +36,7 @@ export class ClassicBattleConfig {
   shotEnergyCost: number;
   moveShotEnergyCost: number;
   shotDamage: number;
+  playerViscosity: number;
 
   constructor(options: Partial<ClassicBattleConfigOptions> = {}) {
     this.width = options.width ?? 500;
@@ -52,6 +54,7 @@ export class ClassicBattleConfig {
     this.shotEnergyCost = options.shotEnergyCost ?? 20;
     this.moveShotEnergyCost = options.moveShotEnergyCost ?? 30;
     this.shotDamage = options.shotDamage ?? 20;
+    this.playerViscosity = options.playerViscosity ?? 0.5;
   }
 }
 

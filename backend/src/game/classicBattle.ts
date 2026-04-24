@@ -26,24 +26,7 @@ export class ClassicBattleService {
   private lastTickAtMs = 0;
 
   constructor(config?: ClassicBattleConfig) {
-    this.config = config ??
-      new ClassicBattleConfig({
-        width: 500,
-        height: 800,
-        playerRadius: 20,
-        bulletRadius: 6,
-        bulletSpeed: 650,
-        minPullDistance: 18,
-        maxPullDistance: 150,
-        hitPadding: 8,
-        initialHp: 100,
-        initialEnergy: 100,
-        maxEnergy: 100,
-        energyRegenPerSecond: 5,
-        shotEnergyCost: 20,
-        moveShotEnergyCost: 30,
-        shotDamage: 20,
-      });
+    this.config = config ?? new ClassicBattleConfig();
   }
 
   getConfig(): ClassicBattleConfig {
@@ -232,7 +215,7 @@ export class ClassicBattleService {
         radius: this.config.playerRadius + this.config.hitPadding,
         position: { x: player.x, y: player.y },
         velocity: { x: 0, y: 0 },
-        viscosity: 0,
+        viscosity: this.config.playerViscosity,
         drag: 0,
         collidable: true,
       });
